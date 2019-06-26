@@ -31,6 +31,12 @@
             "port": 53,
             "protocol": "TCP",
             "targetPort": 53
+          },
+          {
+            "name": "metrics",
+            "port": 9153,
+            "protocol": "TCP",
+            "containerPort": 9153
           }
         ],
         "selector": {

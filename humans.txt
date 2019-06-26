@@ -47,6 +47,7 @@ Yannig Perré            @Yannig
 Chetan                  @cPu1
 Marc Carré              @marccarre
 Cristian Radu           @cristian-radu
+Johan Dewe              @dewe
 
 /* Thanks */
 
