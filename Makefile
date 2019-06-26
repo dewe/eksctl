@@ -62,15 +62,15 @@ test: generate ## Run unit test (and re-generate code under test)
 
 .PHONY: unit-test
 unit-test: ## Run unit test only
-	CGO_ENABLED=0 go test -covermode=count -coverprofile=coverage.out ./pkg/... ./cmd/... $(UNIT_TEST_ARGS)
+	CGO_ENABLED=0 go test -tags "$(GO_BUILD_TAGS)" -covermode=count -coverprofile=coverage.out ./pkg/... ./cmd/... $(UNIT_TEST_ARGS)
 
 .PHONY: unit-test-race
 unit-test-race: ## Run unit test with race detection
-	CGO_ENABLED=1 go test -race -covermode=atomic -coverprofile=coverage.out ./pkg/... ./cmd/... $(UNIT_TEST_ARGS)
+	CGO_ENABLED=1 go test -tags "$(GO_BUILD_TAGS)" -race -covermode=atomic -coverprofile=coverage.out ./pkg/... ./cmd/... $(UNIT_TEST_ARGS)
 
 .PHONY: build-integration-test
 build-integration-test: ## Build integration test binary
-	go test -tags integration ./integration/... -c -o ./eksctl-integration-test
+	go test -tags "$(GO_BUILD_TAGS) integration" ./integration/... -c -o ./eksctl-integration-test
 
 .PHONY: integration-test
 integration-test: build build-integration-test ## Run the integration tests (with cluster creation and cleanup)
@@ -137,16 +137,20 @@ generate-kubernetes-types: ## Generate Kubernetes API helpers
 	go mod download k8s.io/code-generator # make sure the code-generator is present
 	@# generate-groups.sh can't find the lincense header when using Go modules, so we provide one
 	echo "/*\n$$(cat LICENSE)*/\n" > codegenheader.txt
-	env GOPATH="$$(go env GOPATH)" bash "$$(go env GOPATH)/pkg/mod/k8s.io/code-generator@v0.0.0-20190612205613-18da4a14b22b/generate-groups.sh" \
+	env GOPATH="$$(go env GOPATH)" bash -x "$$(go env GOPATH)/pkg/mod/k8s.io/code-generator@v0.0.0-20190612205613-18da4a14b22b/generate-groups.sh" \
 	  deepcopy,defaulter pkg/apis ./pkg/apis eksctl.io:v1alpha5 --go-header-file codegenheader.txt --output-base="$${PWD}"
 
 
 ##@ Docker
+go-deps.txt: go.mod
+	go list -tags "$(GO_BUILD_TAGS) integration tools" -f '{{join .Imports "\n"}}{{"\n"}}{{join .TestImports "\n" }}{{"\n"}}{{join .XTestImports "\n" }}' ./cmd/... ./pkg/... ./integration/...  | \
+	  sort | uniq | grep -v eksctl | \
+	  xargs go list -f '{{ if not .Standard }}{{.ImportPath}}{{end}}' > $@
 
 .PHONY: eksctl-build-image
-eksctl-build-image: ## Create the the eksctl build docker image
+eksctl-build-image: go-deps.txt ## Create the the eksctl build cache docker image
 	-docker pull $(EKSCTL_BUILD_IMAGE)
-	docker build --tag=$(EKSCTL_BUILD_IMAGE) --cache-from=$(EKSCTL_BUILD_IMAGE) --target buildcache -f Dockerfile .
+	docker build --tag=$(EKSCTL_BUILD_IMAGE) --cache-from=$(EKSCTL_BUILD_IMAGE) --cache-from=$(EKSCTL_BUILD_IMAGE) $(EKSCTL_IMAGE_BUILD_ARGS) --target buildcache -f Dockerfile .
 
 EKSCTL_IMAGE_BUILD_ARGS := --build-arg=GO_BUILD_TAGS=$(GO_BUILD_TAGS)
 
@@ -161,7 +165,7 @@ endif
 
 .PHONY: eksctl-image
 eksctl-image: eksctl-build-image ## Create the eksctl image
-	docker build --tag=$(EKSCTL_IMAGE) $(EKSCTL_IMAGE_BUILD_ARGS) .
+	docker build --tag=$(EKSCTL_IMAGE) --cache-from=$(EKSCTL_BUILD_IMAGE) $(EKSCTL_IMAGE_BUILD_ARGS) .
 	[ -z "${CI}" ] || ./get-testresults.sh # only get test results in Continuous Integration
 
 ##@ Release
